@@ -1,0 +1,101 @@
+class Constants {
+  static const List<Map<String, dynamic>> layerDefinitions = [
+    {
+      'key': 'savi',
+      'icon': '',
+      'name': 'Soil Adjusted Vegetation Index',
+      'minLabel': '-1.0',
+      'midLabel': '0.0',
+      'maxLabel': '1.0',
+      'unit': '',
+    },
+    {
+      'key': 'kc',
+      'icon': '',
+      'name': 'Crop Coefficient (FAO-56)',
+      'minLabel': '0.0',
+      'midLabel': '0.75',
+      'maxLabel': '1.5',
+      'unit': '',
+    },
+    {
+      'key': 'etc',
+      'icon': '',
+      'name': 'Evapotranspiration',
+      'minLabel': '0 mm/d',
+      'midLabel': '7.5 mm/d',
+      'maxLabel': '15 mm/d',
+      'unit': 'mm/day',
+    },
+    {
+      'key': 'cwr',
+      'icon': '',
+      'name': 'Crop Water Requirement',
+      'minLabel': '0 mm',
+      'midLabel': '5 mm',
+      'maxLabel': '10 mm',
+      'unit': 'mm/day',
+    },
+    {
+      'key': 'iwr',
+      'icon': '',
+      'name': 'Irrigation Water Requirement',
+      'minLabel': '0 mm',
+      'midLabel': '5 mm',
+      'maxLabel': '10 mm',
+      'unit': 'mm/day',
+    },
+  ];
+
+  static const Map<String, List<double>> legendBreakpoints = {
+    'savi': [
+      -1,
+      -0.8,
+      -0.6,
+      -0.4,
+      -0.2,
+      0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1
+    ],
+    'kc': [
+      0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1,
+      1.1,
+      1.2,
+      1.3,
+      1.4,
+      1.5
+    ],
+    'etc': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    'cwr': [0, 1, 2, 3, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10],
+    'iwr': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  };
+
+  static const List<String> suggestedQuestions = [
+    'What is CWR?',
+    'Explain ETc',
+    'Current IWR status',
+    'Explain SAVI index',
+    'Rabi wheat irrigation schedule',
+    'What is Kc?',
+    'About JalDrishti',
+  ];
+}
