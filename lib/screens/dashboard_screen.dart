@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -72,15 +73,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _utilityPanel = null);
   }
 
+  Future<void> _moveToCurrentLocation(AppProvider provider) async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _mapController.move(const LatLng(29.0, 79.4), 12);
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final location = LatLng(position.latitude, position.longitude);
+      _mapController.move(location, 15);
+      await provider.fetchWeather(
+        lat: location.latitude,
+        lon: location.longitude,
+      );
+    } catch (e) {
+      debugPrint('Location error: $e');
+      _mapController.move(const LatLng(29.0, 79.4), 12);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
 
-    // Show point information automatically when map data arrives.
-    if (provider.pointData != null &&
-        !provider.pointLoading &&
-        provider.selectedLocation != null &&
+    // Show point information as soon as a map selection starts loading.
+    if (provider.selectedLocation != null &&
         provider.selectedLocation != _lastShownInfoLocation) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -98,6 +124,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           final landscape = constraints.maxWidth > constraints.maxHeight;
           final useSideChart = !compact || landscape;
           final utilityPanelHeight = constraints.maxHeight * 0.34;
+          final bottomMapInset = compact && !landscape && _utilityPanel != null
+              ? utilityPanelHeight + 18
+              : 0.0;
           final chartBottomMargin =
               _utilityPanel == null ? 12.0 : utilityPanelHeight + 24;
           final locationBottom =
@@ -107,19 +136,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
           return Stack(
             children: [
               RepaintBoundary(
-                child: MapView(mapController: _mapController),
+                child: MapView(
+                  mapController: _mapController,
+                  bottomInset: bottomMapInset,
+                ),
               ),
-              if (_infoCardOpen && provider.pointData != null)
-                FloatingWorkspacePanel(
-                  initialHeightFraction: compact ? 0.34 : 0.38,
-                  minHeightFraction: 0.24,
-                  maxHeightFraction: 0.62,
-                  maxWidth: 390,
+              if (_infoCardOpen &&
+                  provider.selectedLocation != null &&
+                  _utilityPanel != _UtilityPanel.layers)
+                ResizableSideDrawer(
+                  initialFraction: compact ? 0.72 : 0.34,
+                  minFraction: compact ? 0.62 : 0.30,
+                  maxFraction: compact ? 0.86 : 0.48,
+                  maxWidth: 430,
                   margin: EdgeInsets.fromLTRB(
                     12,
                     topPanelMargin,
                     12,
-                    12,
+                    compact ? 84 : 12,
                   ),
                   child: InfoPanelSheet(
                     floating: true,
@@ -169,14 +203,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
               if (_utilityPanel != null)
-                DraggableBottomPanel(
-                  initialFraction: 0.34,
-                  minFraction: 0.24,
-                  maxFraction: 0.70,
-                  child: _utilityPanel == _UtilityPanel.layers
-                      ? LayerControlSheet(onClose: _closeUtilityPanel)
-                      : WeatherPanel(onClose: _closeUtilityPanel),
-                ),
+                compact && !landscape
+                    ? DraggableBottomPanel(
+                        initialFraction: 0.34,
+                        minFraction: 0.24,
+                        maxFraction: 0.70,
+                        child: _utilityPanel == _UtilityPanel.layers
+                            ? LayerControlSheet(onClose: _closeUtilityPanel)
+                            : WeatherPanel(onClose: _closeUtilityPanel),
+                      )
+                    : ResizableSideDrawer(
+                        initialFraction: 0.34,
+                        minFraction: 0.30,
+                        maxFraction: 0.48,
+                        maxWidth: 460,
+                        margin: EdgeInsets.fromLTRB(
+                          12,
+                          topPanelMargin,
+                          12,
+                          12,
+                        ),
+                        child: _utilityPanel == _UtilityPanel.layers
+                            ? LayerControlSheet(onClose: _closeUtilityPanel)
+                            : WeatherPanel(onClose: _closeUtilityPanel),
+                      ),
               SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
@@ -191,9 +241,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   mini: true,
                   backgroundColor:
                       isDark ? const Color(0xFF091722) : Colors.white,
-                  onPressed: () {
-                    _mapController.move(const LatLng(29.0, 79.4), 12);
-                  },
+                  onPressed: () => _moveToCurrentLocation(provider),
                   child: Icon(
                     Icons.my_location,
                     color: isDark ? AppTheme.brandTeal : AppTheme.brandPrimary,

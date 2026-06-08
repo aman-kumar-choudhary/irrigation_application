@@ -33,7 +33,6 @@ class InfoPanelSheet extends StatelessWidget {
 
     if (data == null) {
       return Container(
-        height: 200,
         decoration: BoxDecoration(
           color: isDark
               ? const Color(0xFF080C14).withOpacity(0.96)
@@ -42,15 +41,29 @@ class InfoPanelSheet extends StatelessWidget {
               ? BorderRadius.circular(24)
               : const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: const Center(child: Text('No data available')),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: provider.pointLoading
+                  ? const CircularProgressIndicator.adaptive()
+                  : Text(
+                      provider.pointError ?? 'No pixel data available',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isDark
+                            ? AppTheme.darkTextSoft
+                            : AppTheme.lightTextSoft,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+          ),
+        ),
       );
     }
 
-    final activeLayers = Constants.layerDefinitions
-        .where(
-          (l) => provider.layers[l['key'] as String] == true,
-        )
-        .toList();
+    final displayLayers = Constants.layerDefinitions;
     final displayDate = provider.selectedDate != null
         ? DateFormat('dd MMM yyyy').format(provider.selectedDate!)
         : data.acquisitionDate;
@@ -103,7 +116,7 @@ class InfoPanelSheet extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            ' Selected Point',
+                            'Selected Point',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -124,39 +137,39 @@ class InfoPanelSheet extends StatelessWidget {
                     const SizedBox(height: 12),
 
                     // Meta rows
-                    _metaRow('🛰️', 'Date', displayDate, isDark),
                     _metaRow(
-                        '🌐',
-                        'Location',
-                        '${data.lat.toStringAsFixed(5)}°N, ${data.lon.toStringAsFixed(5)}°E',
-                        isDark),
+                      Icons.satellite_alt_outlined,
+                      'Date',
+                      displayDate,
+                      isDark,
+                    ),
+                    _metaRow(
+                      Icons.public_outlined,
+                      'Location',
+                      '${_formatCoord(data.lat, 'N', 'S')}, ${_formatCoord(data.lon, 'E', 'W')}',
+                      isDark,
+                    ),
+                    if (data.pixelId != null)
+                      _metaRow(
+                        Icons.grid_on_outlined,
+                        'Pixel',
+                        data.pixelId!,
+                        isDark,
+                      ),
+                    if (data.row != null && data.col != null)
+                      _metaRow(
+                        Icons.table_rows_outlined,
+                        'Raster cell',
+                        'Row ${data.row}, Col ${data.col}',
+                        isDark,
+                      ),
 
                     const SizedBox(height: 16),
 
                     // Values
-                    if (activeLayers.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.03)
-                              : Colors.black.withOpacity(0.03),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          'Enable a layer in the sidebar to see values.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isDark
-                                ? AppTheme.darkTextMuted
-                                : AppTheme.lightTextMuted,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      )
-                    else
-                      ...activeLayers.map((layer) =>
-                          _layerValues(layer, data, provider, isDark)),
+                    ...displayLayers.map(
+                      (layer) => _layerValues(layer, data, provider, isDark),
+                    ),
                   ],
                 ),
               ),
@@ -167,7 +180,7 @@ class InfoPanelSheet extends StatelessWidget {
     );
   }
 
-  Widget _metaRow(String icon, String label, String value, bool isDark) {
+  Widget _metaRow(IconData icon, String label, String value, bool isDark) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -184,7 +197,11 @@ class InfoPanelSheet extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(icon, style: const TextStyle(fontSize: 16)),
+          Icon(
+            icon,
+            size: 16,
+            color: isDark ? AppTheme.brandTeal : AppTheme.brandPrimary,
+          ),
           const SizedBox(width: 8),
           Text(
             label,
@@ -458,5 +475,10 @@ class InfoPanelSheet extends StatelessWidget {
       default:
         return AppTheme.brandPrimary;
     }
+  }
+
+  String _formatCoord(double value, String positive, String negative) {
+    final hemi = value >= 0 ? positive : negative;
+    return '${value.abs().toStringAsFixed(5)} deg $hemi';
   }
 }

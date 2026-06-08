@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../models/point_data_model.dart';
 import '../providers/app_provider.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
 
-class LayerControlSheet extends StatelessWidget {
+class LayerControlSheet extends StatefulWidget {
   final VoidCallback? onClose;
 
   const LayerControlSheet({super.key, this.onClose});
+
+  @override
+  State<LayerControlSheet> createState() => _LayerControlSheetState();
+}
+
+class _LayerControlSheetState extends State<LayerControlSheet> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,56 +48,63 @@ class LayerControlSheet extends StatelessWidget {
         ),
       ),
       child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: isDark ? Colors.white24 : Colors.black12,
-                borderRadius: BorderRadius.circular(2),
-              ),
+        child: Scrollbar(
+          controller: _scrollController,
+          thumbVisibility: true,
+          radius: const Radius.circular(999),
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            physics: const ClampingScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white24 : Colors.black12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+                  child: _workspaceHeader(context, isDark),
+                ),
+                _selectedPointPanel(provider, isDark),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _sectionLabel('Raster Layers', isDark),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+                  child: Column(
+                    children: [
+                      for (final layer in Constants.layerDefinitions)
+                        _layerCard(
+                          layer: layer,
+                          active: provider.layers[layer['key']] ?? false,
+                          isDark: isDark,
+                          onTap: () =>
+                              provider.toggleLayer(layer['key'] as String),
+                        ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                  child: _baseMapControls(provider, isDark),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
+                  child: _opacityControl(provider, isDark),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
-              child: _workspaceHeader(context, isDark),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: _sectionLabel('Raster Layers', isDark),
-              ),
-            ),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
-                itemCount: Constants.layerDefinitions.length,
-                itemBuilder: (context, index) {
-                  final layer = Constants.layerDefinitions[index];
-                  final isActive = provider.layers[layer['key']] ?? false;
-
-                  return _layerCard(
-                    layer: layer,
-                    active: isActive,
-                    isDark: isDark,
-                    onTap: () => provider.toggleLayer(layer['key'] as String),
-                  );
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-              child: _baseMapControls(provider, isDark),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
-              child: _opacityControl(provider, isDark),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -135,12 +157,195 @@ class LayerControlSheet extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.close, size: 20),
             onPressed: () {
-              if (onClose != null) {
-                onClose!();
+              if (widget.onClose != null) {
+                widget.onClose!();
               } else {
                 Navigator.maybePop(context);
               }
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectedPointPanel(AppProvider provider, bool isDark) {
+    if (provider.selectedLocation == null &&
+        provider.pointData == null &&
+        !provider.pointLoading &&
+        provider.pointError == null) {
+      return const SizedBox.shrink();
+    }
+
+    final data = provider.pointData;
+    final displayDate = data == null
+        ? null
+        : provider.selectedDate != null
+            ? DateFormat('dd MMM yyyy').format(provider.selectedDate!)
+            : data.acquisitionDate;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color:
+              isDark ? Colors.white.withOpacity(0.045) : AppTheme.lightSurface2,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.location_on_outlined,
+                  size: 18,
+                  color: isDark ? AppTheme.brandTeal : AppTheme.brandPrimary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _sectionLabel('Selected Point', isDark),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (provider.pointLoading)
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Sampling pixel data',
+                    style: TextStyle(
+                      color: isDark
+                          ? AppTheme.darkTextSoft
+                          : AppTheme.lightTextSoft,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              )
+            else if (provider.pointError != null)
+              Text(
+                provider.pointError!,
+                style: TextStyle(
+                  color: Colors.orange.shade300,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              )
+            else if (data != null) ...[
+              _pointMetaRow(
+                'Lat / Lon',
+                '${data.lat.toStringAsFixed(5)}, ${data.lon.toStringAsFixed(5)}',
+                isDark,
+              ),
+              if (displayDate != null)
+                _pointMetaRow('Date', displayDate, isDark),
+              if (data.pixelId != null)
+                _pointMetaRow('Pixel', data.pixelId!, isDark),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final layer in Constants.layerDefinitions)
+                    _pointValueChip(layer, data, isDark),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pointMetaRow(String label, String value, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: isDark ? AppTheme.darkTextMuted : AppTheme.lightTextMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? AppTheme.darkTextSoft : AppTheme.lightTextSoft,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'JetBrains Mono',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pointValueChip(
+    Map<String, dynamic> layer,
+    PointData data,
+    bool isDark,
+  ) {
+    final key = layer['key'] as String;
+    final value = data.values[key];
+    final unit = layer['unit'] as String? ?? '';
+    final displayValue =
+        value == null ? 'No data' : '${value.toStringAsFixed(3)} $unit'.trim();
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 92),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF081420) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.08) : AppTheme.lightBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            key.toUpperCase(),
+            style: TextStyle(
+              color: isDark ? AppTheme.darkTextMuted : AppTheme.lightTextMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            displayValue,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isDark ? AppTheme.darkText : AppTheme.lightText,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              fontFamily: 'JetBrains Mono',
+            ),
           ),
         ],
       ),

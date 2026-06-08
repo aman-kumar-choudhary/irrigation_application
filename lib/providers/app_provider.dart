@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/weather_model.dart';
@@ -23,7 +25,7 @@ class AppProvider extends ChangeNotifier {
     'iwr': false,
   };
   double opacity = 1.0;
-  String mapStyle = 'street';
+  String mapStyle = 'satellite';
   String? forecastWindow;
 
   // Weather
@@ -37,6 +39,7 @@ class AppProvider extends ChangeNotifier {
   // Calendar / History
   List<AvailableDate> availableDates = [];
   bool historyLoading = false;
+  String? historyError;
   String currentSlot = 'today';
   DateTime? selectedDate;
 
@@ -44,6 +47,8 @@ class AppProvider extends ChangeNotifier {
   LatLng? selectedLocation;
   PointData? pointData;
   bool pointLoading = false;
+  String? pointError;
+  int _pointRequestId = 0;
 
   // Chart
   bool chartVisible = false;
@@ -88,6 +93,7 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> loadHistory() async {
     historyLoading = true;
+    historyError = null;
     notifyListeners();
 
     try {
@@ -98,6 +104,7 @@ class AppProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('History error: $e');
+      historyError = e.toString().replaceFirst('Exception: ', '');
     } finally {
       historyLoading = false;
       notifyListeners();
@@ -134,28 +141,63 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchPointData(LatLng loc) async {
-    pointLoading = true;
-    selectedLocation = loc;
-    pointData = null;
+  Future<void> fetchWeatherForDate(DateTime date) async {
+    weatherLoading = true;
     notifyListeners();
 
     try {
-      pointData =
-          await _api.fetchPointData(loc.latitude, loc.longitude, currentSlot);
-      userLocationName = await _api.reverseGeocode(loc.latitude, loc.longitude);
+      final today = DateTime.now();
+      final selectedDay = DateTime(date.year, date.month, date.day);
+      final todayDay = DateTime(today.year, today.month, today.day);
+      if (selectedDay.isBefore(todayDay)) {
+        final iso = selectedDay.toIso8601String().split('T')[0];
+        weatherData =
+            await _api.fetchHistoricalWeather(weatherLat, weatherLon, iso);
+      } else {
+        weatherData = await _api.fetchWeather(weatherLat, weatherLon);
+      }
+      selectedWeatherIndex = 0;
     } catch (e) {
-      debugPrint('Point data error: $e');
-      pointData = null;
+      debugPrint('Dated weather error: $e');
     } finally {
-      pointLoading = false;
+      weatherLoading = false;
       notifyListeners();
     }
   }
 
+  Future<void> fetchPointData(LatLng loc) async {
+    final requestId = ++_pointRequestId;
+    pointLoading = true;
+    selectedLocation = loc;
+    pointData = null;
+    pointError = null;
+    notifyListeners();
+
+    try {
+      final data =
+          await _api.fetchPointData(loc.latitude, loc.longitude, currentSlot);
+      final locationName = await _api.reverseGeocode(data.lat, data.lon);
+      if (requestId != _pointRequestId) return;
+      pointData = data;
+      userLocationName = locationName;
+    } catch (e) {
+      if (requestId != _pointRequestId) return;
+      debugPrint('Point data error: $e');
+      pointData = null;
+      pointError = e.toString().replaceFirst('Exception: ', '');
+    } finally {
+      if (requestId == _pointRequestId) {
+        pointLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
   void clearPointData() {
+    _pointRequestId++;
     selectedLocation = null;
     pointData = null;
+    pointError = null;
     notifyListeners();
   }
 
@@ -165,11 +207,21 @@ class AppProvider extends ChangeNotifier {
     final match = availableDates.where((d) => d.date == iso).firstOrNull;
     currentSlot = match?.slot ?? 'today';
     notifyListeners();
+    unawaited(fetchWeatherForDate(date));
+    final loc = selectedLocation;
+    if (loc != null) {
+      unawaited(fetchPointData(loc));
+    }
   }
 
   void clearDate() {
     selectedDate = null;
     currentSlot = 'today';
     notifyListeners();
+    unawaited(fetchWeather());
+    final loc = selectedLocation;
+    if (loc != null) {
+      unawaited(fetchPointData(loc));
+    }
   }
 }

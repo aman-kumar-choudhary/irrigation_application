@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -9,16 +11,26 @@ import '../utils/theme.dart';
 
 class MapView extends StatefulWidget {
   final MapController mapController;
+  final double bottomInset;
 
-  const MapView({super.key, required this.mapController});
+  const MapView({
+    super.key,
+    required this.mapController,
+    this.bottomInset = 0,
+  });
 
   @override
   State<MapView> createState() => _MapViewState();
 }
 
 class _MapViewState extends State<MapView> {
+  static const LatLng _initialCenter = LatLng(29.0, 79.4);
+  static const double _initialZoom = 9.0;
+
   List<Polygon> boundaryPolygons = [];
   bool boundaryLoading = true;
+  LatLng _visibleCenter = _initialCenter;
+  double _visibleZoom = _initialZoom;
 
   @override
   void initState() {
@@ -262,16 +274,28 @@ class _MapViewState extends State<MapView> {
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final baseStyle = _baseStyle(provider.mapStyle);
+    final selectedMarkerPoint = provider.pointData == null
+        ? provider.selectedLocation
+        : LatLng(provider.pointData!.lat, provider.pointData!.lon);
 
     return Stack(
       children: [
         FlutterMap(
           mapController: widget.mapController,
           options: MapOptions(
-            initialCenter: const LatLng(29.0, 79.4),
-            initialZoom: 9.0,
+            initialCenter: _initialCenter,
+            initialZoom: _initialZoom,
             minZoom: 5,
             maxZoom: 18,
+            onPositionChanged: (position, hasGesture) {
+              final nextCenter = position.center;
+              final nextZoom = position.zoom;
+              if (nextCenter == null && nextZoom == null) return;
+              setState(() {
+                if (nextCenter != null) _visibleCenter = nextCenter;
+                if (nextZoom != null) _visibleZoom = nextZoom;
+              });
+            },
             onTap: (tapPosition, latLng) {
               provider.fetchPointData(latLng);
             },
@@ -303,11 +327,11 @@ class _MapViewState extends State<MapView> {
               PolygonLayer(polygons: boundaryPolygons),
 
             // Selected location marker
-            if (provider.selectedLocation != null)
+            if (selectedMarkerPoint != null)
               MarkerLayer(
                 markers: [
                   Marker(
-                    point: provider.selectedLocation!,
+                    point: selectedMarkerPoint,
                     width: 44,
                     height: 44,
                     child: Container(
@@ -330,9 +354,43 @@ class _MapViewState extends State<MapView> {
           ],
         ),
         Positioned(
+          left: 12,
+          bottom: widget.bottomInset + 98,
+          child: _CoordinateReadout(
+            center: _visibleCenter,
+            selected: selectedMarkerPoint,
+          ),
+        ),
+        Positioned(
+          left: 12,
+          bottom: widget.bottomInset + 58,
+          child: _ScaleReadout(
+            center: _visibleCenter,
+            zoom: _visibleZoom,
+          ),
+        ),
+        if (boundaryLoading ||
+            provider.pointLoading ||
+            provider.pointError != null)
+          Positioned(
+            left: 12,
+            right: 12,
+            top: MediaQuery.paddingOf(context).top + 86,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: _MapStatusPill(
+                loading: boundaryLoading || provider.pointLoading,
+                message: provider.pointError ??
+                    (provider.pointLoading
+                        ? 'Sampling selected pixel'
+                        : 'Loading study boundary'),
+              ),
+            ),
+          ),
+        Positioned(
           left: 10,
           right: 10,
-          bottom: 10,
+          bottom: widget.bottomInset + 10,
           child: _BasemapSwitcher(
             choices: _baseMapChoices,
             selectedKey: provider.mapStyle,
@@ -340,6 +398,234 @@ class _MapViewState extends State<MapView> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CoordinateReadout extends StatelessWidget {
+  final LatLng center;
+  final LatLng? selected;
+
+  const _CoordinateReadout({
+    required this.center,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final point = selected ?? center;
+    final label = selected == null ? 'Center' : 'Selected';
+
+    return _MapGlassPill(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.explore_outlined, size: 15, color: Colors.white),
+          const SizedBox(width: 7),
+          Text(
+            '$label  ${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontFamily: 'JetBrains Mono',
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScaleReadout extends StatelessWidget {
+  final LatLng center;
+  final double zoom;
+
+  const _ScaleReadout({
+    required this.center,
+    required this.zoom,
+  });
+
+  static const List<int> _scaleMeters = [
+    5000000,
+    2000000,
+    1000000,
+    500000,
+    250000,
+    100000,
+    50000,
+    25000,
+    15000,
+    10000,
+    5000,
+    2500,
+    1000,
+    500,
+    250,
+    100,
+    50,
+    25,
+    10,
+    5,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final metersPerPixel = _metersPerPixel(center.latitude, zoom);
+    final meters = _scaleMeters.firstWhere(
+      (value) => value / metersPerPixel <= 150,
+      orElse: () => _scaleMeters.last,
+    );
+    final width = (meters / metersPerPixel).clamp(44.0, 150.0);
+    final label = meters >= 1000 ? '${meters ~/ 1000} km' : '$meters m';
+
+    return _MapGlassPill(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 7),
+      child: SizedBox(
+        width: 166,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontFamily: 'JetBrains Mono',
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            CustomPaint(
+              size: Size(width, 8),
+              painter: _ScaleBarPainter(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _metersPerPixel(double latitude, double zoom) {
+    final clampedLat = latitude.clamp(-85.0, 85.0);
+    final latitudeRadians = clampedLat * math.pi / 180;
+    return math.cos(latitudeRadians) *
+        2 *
+        math.pi *
+        6378137 /
+        (256 * math.pow(2, zoom));
+  }
+}
+
+class _ScaleBarPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.square;
+    final y = size.height - 2;
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    canvas.drawLine(const Offset(0, 0), Offset(0, y), paint);
+    canvas.drawLine(
+        Offset(size.width / 2, y - 4), Offset(size.width / 2, y), paint);
+    canvas.drawLine(Offset(size.width, 0), Offset(size.width, y), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _MapGlassPill extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+
+  const _MapGlassPill({
+    required this.child,
+    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: const Color(0xCC07131F),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x4A000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _MapStatusPill extends StatelessWidget {
+  final bool loading;
+  final String message;
+
+  const _MapStatusPill({
+    required this.loading,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 320),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xE6081420),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x42000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading)
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppTheme.brandTeal,
+              ),
+            )
+          else
+            const Icon(
+              Icons.error_outline,
+              size: 16,
+              color: Colors.orangeAccent,
+            ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              message,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

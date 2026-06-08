@@ -25,7 +25,7 @@ class AppTheme {
   static const Color lightTextMuted = Color(0xFF64748B);
 
   static ThemeData get darkTheme {
-    return ThemeData.dark().copyWith(
+    return ThemeData.dark(useMaterial3: true).copyWith(
       scaffoldBackgroundColor: const Color(0xFF0B1827),
       primaryColor: brandPrimary,
       colorScheme: const ColorScheme.dark(
@@ -71,7 +71,7 @@ class AppTheme {
   }
 
   static ThemeData get lightTheme {
-    return ThemeData.light().copyWith(
+    return ThemeData.light(useMaterial3: true).copyWith(
       scaffoldBackgroundColor: lightSurface,
       primaryColor: brandPrimary,
       colorScheme: const ColorScheme.light(
