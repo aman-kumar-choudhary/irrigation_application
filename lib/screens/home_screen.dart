@@ -81,21 +81,8 @@ class _HomeScreenState extends State<HomeScreen>
     ),
   ];
 
-  static const List<_StatData> _overviewStats = [
-    _StatData(Icons.grass_outlined, 'Rabi', 'Wheat season'),
-    _StatData(Icons.sensors_outlined, 'ET', 'Tower calibration'),
-    _StatData(Icons.public_outlined, 'GIS', 'Spatial monitoring'),
-    _StatData(Icons.water_drop_outlined, 'IWR', 'Water demand'),
-    _StatData(Icons.satellite_alt_outlined, 'RS', 'Satellite stack'),
-    _StatData(Icons.location_on_outlined, 'USN', 'Study district'),
-  ];
-
-  static const List<_FooterTechData> _footerTech = [
-    _FooterTechData('GIS', 'Spatial intelligence'),
-    _FooterTechData('ET', 'Evapotranspiration'),
-    _FooterTechData('NDVI', 'Crop vigor'),
-    _FooterTechData('Rainfall', 'Weather signal'),
-  ];
+  
+ 
 
   @override
   void initState() {
@@ -189,10 +176,10 @@ class _HomeScreenState extends State<HomeScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 _logo(
-                  'assets/images/logo1.png',
+                  'assets/images/logo.png',
                   'IIRS',
                   logoHeight,
-                  maxWidth: logoHeight * 2.35,
+                  maxWidth: logoHeight ,
                   isDark: isDark,
                 ),
                 SizedBox(width: tiny ? 10 : 16),
@@ -200,6 +187,7 @@ class _HomeScreenState extends State<HomeScreen>
                   'assets/images/isro.png',
                   'ISRO',
                   logoHeight,
+                  maxWidth: logoHeight ,
                   isDark: isDark,
                 ),
               ],
@@ -301,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen>
             'Indian Space Research Organisation, Department of Space',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-              color: color.withOpacity(0.9),
+              color: color,
               fontSize: compact ? 15 : 18,
               fontWeight: FontWeight.w500,
               height: 1.22,
@@ -312,7 +300,7 @@ class _HomeScreenState extends State<HomeScreen>
             'भारत सरकार / Government of India',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-              color: color.withOpacity(0.75),
+              color: color,
               fontSize: compact ? 12 : 14,
               fontWeight: FontWeight.w400,
               height: 1.24,
@@ -330,7 +318,7 @@ class _HomeScreenState extends State<HomeScreen>
     return Material(
       color: bg,
       elevation: 4,
-      shadowColor: Colors.black.withOpacity(0.24),
+      shadowColor: Colors.black,
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
@@ -356,7 +344,7 @@ class _HomeScreenState extends State<HomeScreen>
                           ? MainAxisAlignment.start
                           : MainAxisAlignment.center,
                       children: [
-                        SizedBox(width: compact ? 16 : 0),
+                        SizedBox(width: compact ? 4 : 0),
                         _navLink(
                           'About',
                           textColor,
@@ -377,7 +365,7 @@ class _HomeScreenState extends State<HomeScreen>
                           textColor,
                           () => provider.setIndex(4),
                         ),
-                        SizedBox(width: compact ? 16 : 0),
+                        SizedBox(width: compact ? 4 : 0),
                       ],
                     ),
                   ),
@@ -862,7 +850,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   const SizedBox(height: 20),
-                  _regionMetrics(phone),
+                  
                 ],
               ),
             ),
@@ -912,46 +900,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _regionMetrics(bool phone) {
-    final metrics = const [
-      ('Rabi', 'Wheat season'),
-      ('ET', 'Tower calibration'),
-      ('GIS', 'Spatial monitoring'),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final stack = constraints.maxWidth < 360 && phone;
-        final children = [
-          for (final metric in metrics)
-            Expanded(
-              child: _metricTile(metric.$1, metric.$2),
-            ),
-        ];
-
-        if (stack) {
-          return Column(
-            children: [
-              for (int i = 0; i < metrics.length; i++) ...[
-                _metricTile(metrics[i].$1, metrics[i].$2),
-                if (i != metrics.length - 1) const SizedBox(height: 8),
-              ],
-            ],
-          );
-        }
-
-        return Row(
-          children: [
-            children[0],
-            const SizedBox(width: 10),
-            children[1],
-            const SizedBox(width: 10),
-            children[2],
-          ],
-        );
-      },
-    );
-  }
+ 
 
   Widget _metricTile(String value, String label) {
     return Container(
@@ -1135,17 +1084,13 @@ class _HomeScreenState extends State<HomeScreen>
       child: GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        itemCount: _overviewStats.length,
+        
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
           mainAxisExtent: 142,
         ),
         itemBuilder: (context, index) {
-          return _overviewStatCard(
-            _overviewStats[index],
-            isDark,
-            showRightBorder: (index + 1) % crossAxisCount != 0,
-          );
+         
         },
       ),
     );
@@ -1239,27 +1184,16 @@ class _HomeScreenState extends State<HomeScreen>
             height: 1.35,
           ),
         ),
+        Text(
+          'Udham Singh Nagar · Uttarakhand · Rabi Wheat',
+          textAlign: compact ? TextAlign.center : TextAlign.start,
+          style: GoogleFonts.inter(
+            color: _darkTextMuted,
+            fontSize: 13,
+            height: 1.35,
+          ),
+        ),
       ],
-    );
-
-    final badges = Wrap(
-      alignment: compact ? WrapAlignment.center : WrapAlignment.start,
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final item in _footerTech) _footerBadge(item),
-      ],
-    );
-
-    final location = Text(
-      'Udham Singh Nagar · Uttarakhand · Rabi Wheat',
-      textAlign: compact ? TextAlign.center : TextAlign.right,
-      style: GoogleFonts.jetBrainsMono(
-        color: _darkTextMuted,
-        fontSize: 12,
-        height: 1.5,
-        letterSpacing: 0,
-      ),
     );
 
     return Container(
@@ -1273,17 +1207,14 @@ class _HomeScreenState extends State<HomeScreen>
                   children: [
                     brand,
                     const SizedBox(height: 24),
-                    badges,
                     const SizedBox(height: 20),
-                    location,
+                  
                   ],
                 )
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(flex: 3, child: brand),
-                    Expanded(flex: 3, child: badges),
-                    Expanded(flex: 2, child: location),
                   ],
                 ),
         ),
@@ -1291,28 +1222,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _footerBadge(_FooterTechData item) {
-    return Tooltip(
-      message: item.role,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: const Color(0x66131E3A),
-          borderRadius: BorderRadius.circular(50),
-          border: Border.all(color: _accentTeal.withOpacity(0.15)),
-        ),
-        child: Text(
-          item.name,
-          style: GoogleFonts.inter(
-            color: _darkTextSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
-          ),
-        ),
-      ),
-    );
-  }
+  
 
   Widget _logo(
     String asset,

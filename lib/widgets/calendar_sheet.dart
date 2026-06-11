@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -6,314 +8,460 @@ import '../models/history_model.dart';
 import '../providers/app_provider.dart';
 import '../utils/theme.dart';
 
-class CalendarSheet extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// FloatingMiniCalendar - Option 2 style popup
+// Width: 320px, Height: 350px max, never fullscreen
+// ─────────────────────────────────────────────────────────────────────────────
+class FloatingMiniCalendar extends StatefulWidget {
   final VoidCallback? onClose;
 
-  const CalendarSheet({super.key, this.onClose});
+  const FloatingMiniCalendar({super.key, this.onClose});
 
+  @override
+  State<FloatingMiniCalendar> createState() => _FloatingMiniCalendarState();
+}
+
+class _FloatingMiniCalendarState extends State<FloatingMiniCalendar> {
   static const Set<int> _seasonMonths = {1, 2, 3, 4, 11, 12};
+  static const List<String> _monthAbbr = ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
+  static const List<int> _monthNumbers = [11, 12, 1, 2, 3, 4];
+
+  DateTime? _focusedMonth;
+  int? _selectedYear;
+  int? _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    _focusedMonth = provider.selectedDate ?? DateTime.now();
+  }
+
+  void _previousMonth() {
+    setState(() {
+      _focusedMonth = DateTime(_focusedMonth!.year, _focusedMonth!.month - 1);
+    });
+  }
+
+  void _nextMonth() {
+    setState(() {
+      _focusedMonth = DateTime(_focusedMonth!.year, _focusedMonth!.month + 1);
+    });
+  }
+
+  void _selectYear(int year) {
+    setState(() {
+      _selectedYear = _selectedYear == year ? null : year;
+      _focusedMonth = DateTime(year, _focusedMonth!.month);
+    });
+  }
+
+  void _selectMonth(int month) {
+    setState(() {
+      _selectedMonth = _selectedMonth == month ? null : month;
+      _focusedMonth = DateTime(_focusedMonth!.year, month);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
-    final months = _calendarMonths(provider.availableDates);
+
+    final availableDates = provider.availableDates;
+    final byDateMap = <String, AvailableDate>{};
+    for (final item in availableDates) {
+      byDateMap[item.date] = item;
+    }
+
+    final years = _getAvailableYears(availableDates);
+    final monthsForYear = _selectedYear != null
+        ? _getMonthsWithData(availableDates, _selectedYear!)
+        : _monthNumbers.toSet().toList();
+
+    final calendarDays = _buildCalendarDays(_focusedMonth!, byDateMap);
+
+    final maxHeight = min(
+      460.0,
+      MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top - 24,
+    );
 
     return Container(
+      width: 320,
+      constraints: BoxConstraints(maxHeight: maxHeight),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF102235) : Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        color: isDark ? const Color(0xFF0E1E2C) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+          color: isDark ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.08),
+          width: 0.5,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      child: SafeArea(
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
-                  borderRadius: BorderRadius.circular(2),
+          // ── header with month/year + close ────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: _previousMonth,
+                        color: isDark ? Colors.white60 : Colors.black54,
+                      ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: _showYearPicker,
+                        child: Text(
+                          _focusedMonth != null
+                              ? DateFormat('MMMM yyyy').format(_focusedMonth!)
+                              : '',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppTheme.lightText,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: _nextMonth,
+                        color: isDark ? Colors.white60 : Colors.black54,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _close(context),
+                  color: isDark ? Colors.white60 : Colors.black45,
+                ),
+              ],
             ),
+          ),
+          // ── day of week header ───────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: const ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+                  .map((d) => Expanded(
+                        child: Text(
+                          d,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+          // ── calendar grid ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 7,
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
+              childAspectRatio: 1.2,
+              children: calendarDays.map((day) => _MiniDayTile(
+                day: day,
+                isDark: isDark,
+                selectedDate: provider.selectedDate,
+                onTap: day.hasData
+                    ? () {
+                        provider.selectDate(day.date!);
+                        _close(context);
+                      }
+                    : null,
+              )).toList(),
+            ),
+          ),
+          // ── filter pills (year + month) ──────────────────────────────────
+          if (years.isNotEmpty || monthsForYear.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 4, 8, 10),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.calendar_today_outlined,
-                    size: 18,
-                    color: AppTheme.brandTeal,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Sentinel Dates',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: isDark
-                                ? AppTheme.darkText
-                                : AppTheme.lightText,
-                          ),
+                  // Year row
+                  if (years.isNotEmpty)
+                    _MiniFilterRow(
+                      label: 'YEAR',
+                      chips: [
+                        _MiniFilterChip(
+                          label: 'All',
+                          active: _selectedYear == null,
+                          isDark: isDark,
+                          onTap: () => setState(() => _selectedYear = null),
                         ),
-                        Text(
-                          provider.availableDates.isEmpty
-                              ? 'No imagery dates loaded'
-                              : '${provider.availableDates.length} imagery dates available',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: isDark
-                                ? AppTheme.darkTextMuted
-                                : AppTheme.lightTextMuted,
+                        for (final y in years)
+                          _MiniFilterChip(
+                            label: y.toString(),
+                            active: _selectedYear == y,
+                            isDark: isDark,
+                            onTap: () => _selectYear(y),
                           ),
-                        ),
                       ],
+                      isDark: isDark,
                     ),
-                  ),
-                  if (provider.selectedDate != null)
-                    TextButton(
-                      onPressed: provider.clearDate,
-                      child: const Text('Clear'),
+                  const SizedBox(height: 6),
+                  // Month row (only when year selected)
+                  if (_selectedYear != null)
+                    _MiniFilterRow(
+                      label: 'MONTH',
+                      chips: [
+                        _MiniFilterChip(
+                          label: 'All',
+                          active: _selectedMonth == null,
+                          isDark: isDark,
+                          onTap: () => setState(() => _selectedMonth = null),
+                        ),
+                        for (final m in monthsForYear)
+                          _MiniFilterChip(
+                            label: _monthNumberToAbbr(m),
+                            active: _selectedMonth == m,
+                            isDark: isDark,
+                            onTap: () => _selectMonth(m),
+                          ),
+                      ],
+                      isDark: isDark,
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => _close(context),
-                  ),
                 ],
               ),
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: _body(context, provider, months, isDark),
+          // ── bottom legend ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+            child: Row(
+              children: [
+                _MiniLegendDot(color: AppTheme.brandTeal),
+                const SizedBox(width: 4),
+                Text(
+                  'Historical Available',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white54 : Colors.black54,
+                  ),
+                ),
+                const Spacer(),
+                if (provider.selectedDate != null)
+                  GestureDetector(
+                    onTap: () {
+                      provider.clearDate();
+                      setState(() {});
+                    },
+                    child: Text(
+                      'Clear',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.brandTeal,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    ),
     );
   }
 
-  Widget _body(
-    BuildContext context,
-    AppProvider provider,
-    List<_CalendarMonth> months,
-    bool isDark,
-  ) {
-    if (provider.historyLoading) {
-      return const Center(child: CircularProgressIndicator.adaptive());
-    }
+  void _showYearPicker() {
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    final years = _getAvailableYears(provider.availableDates);
+    if (years.isEmpty) return;
 
-    if (provider.historyError != null) {
-      return _StateMessage(
-        icon: Icons.cloud_off_outlined,
-        title: 'Could not load imagery dates',
-        message: provider.historyError!,
-        actionLabel: 'Retry',
-        onAction: provider.loadHistory,
-        isDark: isDark,
-      );
-    }
-
-    if (months.isEmpty) {
-      return _StateMessage(
-        icon: Icons.event_busy_outlined,
-        title: 'No Sentinel imagery dates',
-        message: 'The backend did not return processed history slots.',
-        actionLabel: 'Refresh',
-        onAction: provider.loadHistory,
-        isDark: isDark,
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 16),
-      itemCount: months.length,
-      itemBuilder: (context, monthIndex) {
-        final month = months[monthIndex];
-        return _buildMonth(context, month, provider, isDark);
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final isDark = provider.isDark;
+        return Container(
+          padding: const EdgeInsets.all(16),
+          height: 280,
+          color: isDark ? const Color(0xFF0E1E2C) : Colors.white,
+          child: Column(
+            children: [
+              Text(
+                'Select Year',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : AppTheme.lightText,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 2,
+                  ),
+                  itemCount: years.length,
+                  itemBuilder: (ctx, index) {
+                    final year = years[index];
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _focusedMonth = DateTime(year, _focusedMonth!.month));
+                        Navigator.pop(ctx);
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _focusedMonth?.year == year
+                              ? AppTheme.brandPrimary.withOpacity(0.2)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _focusedMonth?.year == year
+                                ? AppTheme.brandPrimary
+                                : isDark
+                                    ? Colors.white24
+                                    : Colors.black12,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            year.toString(),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: _focusedMonth?.year == year
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: _focusedMonth?.year == year
+                                  ? AppTheme.brandTeal
+                                  : isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
       },
     );
   }
 
-  List<_CalendarMonth> _calendarMonths(List<AvailableDate> availableDates) {
-    if (availableDates.isEmpty) return [];
-
-    final byDate = <String, AvailableDate>{};
-    for (final item in availableDates) {
-      byDate[item.date] = item;
-    }
-
-    final sortedDates = byDate.keys.toList()..sort();
-    final start = DateTime.parse('${sortedDates.first}T00:00:00');
-    final end = DateTime.parse('${sortedDates.last}T00:00:00');
-    final endMonth = DateTime(end.year, end.month);
-    final months = <_CalendarMonth>[];
-
-    var cursor = DateTime(start.year, start.month);
-    while (!cursor.isAfter(endMonth)) {
-      if (_seasonMonths.contains(cursor.month)) {
-        months.add(_buildCalendarMonth(cursor, byDate));
+  List<int> _getAvailableYears(List<AvailableDate> dates) {
+    final years = <int>{};
+    for (final date in dates) {
+      final parts = date.date.split('-');
+      if (parts.length >= 1) {
+        years.add(int.parse(parts[0]));
       }
-      cursor = DateTime(cursor.year, cursor.month + 1);
     }
-
-    return months.reversed.toList();
+    return years.toList()..sort((a, b) => b.compareTo(a));
   }
 
-  _CalendarMonth _buildCalendarMonth(
+  List<int> _getMonthsWithData(List<AvailableDate> dates, int year) {
+    final months = <int>{};
+    for (final date in dates) {
+      final parts = date.date.split('-');
+      if (parts.length >= 2 && int.parse(parts[0]) == year) {
+        months.add(int.parse(parts[1]));
+      }
+    }
+    return months.toList()..sort();
+  }
+
+  String _monthNumberToAbbr(int month) {
+    const map = {
+      1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
+      7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec',
+    };
+    return map[month] ?? '';
+  }
+
+  List<_MiniCalendarDay> _buildCalendarDays(
     DateTime month,
     Map<String, AvailableDate> byDate,
   ) {
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
     final firstWeekday = DateTime(month.year, month.month, 1).weekday % 7;
-    final days = <_CalendarDay>[];
 
-    for (var day = 1; day <= daysInMonth; day++) {
-      final date = DateTime(month.year, month.month, day);
-      final iso = DateFormat('yyyy-MM-dd').format(date);
-      days.add(_CalendarDay(date: date, info: byDate[iso]));
+    final List<_MiniCalendarDay> result = [];
+
+    // Add empty cells for days before month starts
+    for (int i = 0; i < firstWeekday; i++) {
+      result.add(_MiniCalendarDay.empty());
     }
 
-    final season = days
-        .map((day) => day.info?.season ?? '')
-        .firstWhere((season) => season.isNotEmpty, orElse: () => '');
+    // Add days of the month
+    for (int day = 1; day <= daysInMonth; day++) {
+      final date = DateTime(month.year, month.month, day);
+      final iso = DateFormat('yyyy-MM-dd').format(date);
+      final hasData = byDate.containsKey(iso);
+      result.add(_MiniCalendarDay(day: day, date: date, hasData: hasData));
+    }
 
-    return _CalendarMonth(
-      date: month,
-      firstWeekday: firstWeekday,
-      days: days,
-      season: season,
-    );
-  }
-
-  Widget _buildMonth(
-    BuildContext context,
-    _CalendarMonth month,
-    AppProvider provider,
-    bool isDark,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  DateFormat('MMMM yyyy').format(month.date),
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? AppTheme.darkText : AppTheme.lightText,
-                  ),
-                ),
-              ),
-              if (month.season.isNotEmpty)
-                _SeasonChip(season: month.season, isDark: isDark),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: const ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-                .map(
-                  (d) => SizedBox(
-                    width: 36,
-                    child: Text(
-                      d,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 8),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 7,
-            childAspectRatio: 0.86,
-            children: [
-              ...List.generate(month.firstWeekday, (_) => const SizedBox()),
-              ...month.days.map(
-                (day) => _CalendarDayTile(
-                  day: day,
-                  isDark: isDark,
-                  selectedDate: provider.selectedDate,
-                  onTap: day.info == null
-                      ? null
-                      : () {
-                          provider.selectDate(day.date);
-                          _close(context);
-                        },
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+    return result;
   }
 
   void _close(BuildContext context) {
-    if (onClose != null) {
-      onClose!();
-    } else {
+    widget.onClose?.call();
+    if (widget.onClose == null) {
       Navigator.maybePop(context);
     }
   }
 }
 
-class _CalendarMonth {
-  final DateTime date;
-  final int firstWeekday;
-  final List<_CalendarDay> days;
-  final String season;
+// ─────────────────────────────────────────────────────────────────────────────
+// Mini day tile
+// ─────────────────────────────────────────────────────────────────────────────
+class _MiniCalendarDay {
+  final int? day;
+  final DateTime? date;
+  final bool hasData;
 
-  const _CalendarMonth({
-    required this.date,
-    required this.firstWeekday,
-    required this.days,
-    required this.season,
-  });
+  _MiniCalendarDay({this.day, this.date, this.hasData = false});
+
+  _MiniCalendarDay.empty()
+      : day = null,
+        date = null,
+        hasData = false;
 }
 
-class _CalendarDay {
-  final DateTime date;
-  final AvailableDate? info;
-
-  const _CalendarDay({
-    required this.date,
-    this.info,
-  });
-}
-
-class _CalendarDayTile extends StatelessWidget {
-  final _CalendarDay day;
+class _MiniDayTile extends StatelessWidget {
+  final _MiniCalendarDay day;
   final bool isDark;
   final DateTime? selectedDate;
   final VoidCallback? onTap;
 
-  const _CalendarDayTile({
+  const _MiniDayTile({
     required this.day,
     required this.isDark,
     required this.selectedDate,
@@ -322,88 +470,170 @@ class _CalendarDayTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasData = day.info != null;
-    final iso = DateFormat('yyyy-MM-dd').format(day.date);
-    final selectedIso = selectedDate == null
-        ? null
-        : DateFormat('yyyy-MM-dd').format(selectedDate!);
-    final isSelected = selectedIso == iso;
-    final isToday = DateFormat('yyyy-MM-dd').format(DateTime.now()) == iso;
-    final layerText = (day.info?.layers ?? const <String>[])
-        .map((layer) => layer.toUpperCase())
-        .take(2)
-        .join(' ');
+    if (day.day == null) {
+      return const SizedBox();
+    }
 
-    return Tooltip(
-      message: hasData
-          ? '$iso - ${(day.info!.layers).join(', ').toUpperCase()}'
-          : iso,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          margin: const EdgeInsets.all(2),
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppTheme.brandPrimary
-                : hasData
-                    ? AppTheme.brandPrimary.withOpacity(isDark ? 0.22 : 0.14)
-                    : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isToday
-                  ? Colors.orange
-                  : hasData
-                      ? AppTheme.brandPrimary.withOpacity(0.34)
-                      : Colors.transparent,
-              width: isToday ? 1.4 : 1,
+    final isSelected = selectedDate != null &&
+        day.date != null &&
+        DateFormat('yyyy-MM-dd').format(selectedDate!) ==
+            DateFormat('yyyy-MM-dd').format(day.date!);
+    final isToday = day.date != null &&
+        DateFormat('yyyy-MM-dd').format(DateTime.now()) ==
+            DateFormat('yyyy-MM-dd').format(day.date!);
+
+    return GestureDetector(
+      onTap: day.hasData ? onTap : null,
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppTheme.brandPrimary
+              : day.hasData
+                  ? AppTheme.brandPrimary.withOpacity(isDark ? 0.20 : 0.10)
+                  : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: isToday
+              ? Border.all(color: Colors.orange.shade400, width: 1)
+              : isSelected
+                  ? Border.all(color: AppTheme.brandPrimary, width: 1)
+                  : day.hasData
+                      ? Border.all(
+                          color: AppTheme.brandPrimary.withOpacity(0.30),
+                          width: 0.5,
+                        )
+                      : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: day.hasData || isSelected
+                    ? FontWeight.w700
+                    : FontWeight.w400,
+                color: isSelected
+                    ? Colors.white
+                    : day.hasData
+                        ? (isDark ? const Color(0xFFD4F5EA) : AppTheme.brandPrimary)
+                        : isDark
+                            ? Colors.white38
+                            : Colors.black38,
+              ),
+            ),
+            if (day.hasData && !isSelected)
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                width: 3,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: AppTheme.brandTeal,
+                  shape: BoxShape.circle,
+                ),
+              )
+            else if (day.hasData && isSelected)
+              const SizedBox(height: 5)
+            else
+              const SizedBox(height: 5),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mini filter row
+// ─────────────────────────────────────────────────────────────────────────────
+class _MiniFilterRow extends StatelessWidget {
+  final String label;
+  final List<Widget> chips;
+  final bool isDark;
+
+  const _MiniFilterRow({
+    required this.label,
+    required this.chips,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 8,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+            color: isDark ? Colors.white30 : Colors.black38,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (int i = 0; i < chips.length; i++) ...[
+                  chips[i],
+                  if (i < chips.length - 1) const SizedBox(width: 4),
+                ],
+              ],
             ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '${day.date.day}',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: hasData || isSelected
-                      ? FontWeight.w800
-                      : FontWeight.w500,
-                  color: isSelected
-                      ? Colors.white
-                      : hasData
-                          ? (isDark
-                              ? const Color(0xFFE5FFF8)
-                              : AppTheme.brandPrimary)
-                          : isDark
-                              ? AppTheme.darkTextMuted
-                              : AppTheme.lightTextMuted,
-                ),
-              ),
-              const SizedBox(height: 3),
-              SizedBox(
-                height: 10,
-                child: hasData
-                    ? Text(
-                        layerText.isEmpty ? 'DATA' : layerText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 7.5,
-                          height: 1,
-                          fontWeight: FontWeight.w800,
-                          color: isSelected
-                              ? Colors.white
-                              : isDark
-                                  ? AppTheme.brandTeal
-                                  : AppTheme.brandPrimary,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MiniFilterChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _MiniFilterChip({
+    required this.label,
+    required this.active,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: active
+              ? AppTheme.brandPrimary.withOpacity(0.22)
+              : isDark
+                  ? Colors.white.withOpacity(0.06)
+                  : Colors.black.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active
+                ? AppTheme.brandPrimary.withOpacity(0.55)
+                : isDark
+                    ? Colors.white.withOpacity(0.10)
+                    : Colors.black.withOpacity(0.08),
+            width: 0.5,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: active
+                ? AppTheme.brandTeal
+                : isDark
+                    ? Colors.white60
+                    : Colors.black54,
           ),
         ),
       ),
@@ -411,95 +641,19 @@ class _CalendarDayTile extends StatelessWidget {
   }
 }
 
-class _SeasonChip extends StatelessWidget {
-  final String season;
-  final bool isDark;
+class _MiniLegendDot extends StatelessWidget {
+  final Color color;
 
-  const _SeasonChip({
-    required this.season,
-    required this.isDark,
-  });
+  const _MiniLegendDot({required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      width: 8,
+      height: 8,
       decoration: BoxDecoration(
-        color: AppTheme.brandAccent.withOpacity(isDark ? 0.18 : 0.10),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppTheme.brandAccent.withOpacity(isDark ? 0.28 : 0.18),
-        ),
-      ),
-      child: Text(
-        season,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          color: isDark ? AppTheme.darkTextSoft : AppTheme.brandAccent,
-        ),
-      ),
-    );
-  }
-}
-
-class _StateMessage extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String message;
-  final String actionLabel;
-  final VoidCallback onAction;
-  final bool isDark;
-
-  const _StateMessage({
-    required this.icon,
-    required this.title,
-    required this.message,
-    required this.actionLabel,
-    required this.onAction,
-    required this.isDark,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 34,
-              color: isDark ? AppTheme.darkTextMuted : AppTheme.lightTextMuted,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: isDark ? AppTheme.darkText : AppTheme.lightText,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? AppTheme.darkTextMuted : AppTheme.lightTextMuted,
-              ),
-            ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: onAction,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: Text(actionLabel),
-            ),
-          ],
-        ),
+        color: color,
+        shape: BoxShape.circle,
       ),
     );
   }

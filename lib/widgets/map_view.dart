@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,11 +10,13 @@ import '../utils/theme.dart';
 class MapView extends StatefulWidget {
   final MapController mapController;
   final double bottomInset;
+  final void Function(Offset screenPosition)? onTapScreenPosition;
 
   const MapView({
     super.key,
     required this.mapController,
     this.bottomInset = 0,
+    this.onTapScreenPosition,
   });
 
   @override
@@ -24,13 +24,18 @@ class MapView extends StatefulWidget {
 }
 
 class _MapViewState extends State<MapView> {
-  static const LatLng _initialCenter = LatLng(29.0, 79.4);
-  static const double _initialZoom = 9.0;
+  static const LatLng _defaultCenter = LatLng(29.0, 79.4);
+  static const double _defaultZoom = 9.0;
+  static const double _minZoom = 8.0;
+  static const double _maxZoom = 17.0;
+  static const double _boundaryPaddingFraction = 0.12;
 
-  List<Polygon> boundaryPolygons = [];
-  bool boundaryLoading = true;
-  LatLng _visibleCenter = _initialCenter;
-  double _visibleZoom = _initialZoom;
+  List<Polygon> _boundaryPolygons = [];
+  bool _boundaryLoading = true;
+  LatLng _visibleCenter = _defaultCenter;
+  double _visibleZoom = _defaultZoom;
+  LatLngBounds? _boundaryBounds;
+  LatLngBounds? _paddedBoundaryBounds;
 
   @override
   void initState() {
@@ -53,31 +58,41 @@ class _MapViewState extends State<MapView> {
         }
       }
 
-      if (polygons.isNotEmpty) {
+      if (polygons.isNotEmpty && mounted) {
         final allPoints = polygons.expand((p) => p.points).toList();
-        if (!mounted) return;
-        setState(() => boundaryPolygons = polygons);
+        if (allPoints.isNotEmpty) {
+          _boundaryBounds = LatLngBounds.fromPoints(allPoints);
+          _paddedBoundaryBounds = _padBounds(
+            _boundaryBounds!,
+            _boundaryPaddingFraction,
+          );
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || allPoints.isEmpty) return;
-          try {
-            widget.mapController.fitCamera(
-              CameraFit.bounds(
-                bounds: LatLngBounds.fromPoints(allPoints),
-                padding: const EdgeInsets.all(28),
-                maxZoom: 12,
-              ),
-            );
-          } catch (e) {
-            debugPrint('Boundary fit error: $e');
-          }
-        });
+          setState(() {
+            _boundaryPolygons = polygons;
+          });
+
+          // Fit camera after layout is complete
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _boundaryBounds == null) return;
+            try {
+              widget.mapController.fitCamera(
+                CameraFit.bounds(
+                  bounds: _boundaryBounds!,
+                  padding: const EdgeInsets.all(24),
+                  maxZoom: _maxZoom - 1,
+                ),
+              );
+            } catch (e) {
+              debugPrint('Boundary camera fit error: $e');
+            }
+          });
+        }
       }
     } catch (e) {
-      debugPrint('Boundary error: $e');
+      debugPrint('Boundary load error: $e');
     } finally {
       if (mounted) {
-        setState(() => boundaryLoading = false);
+        setState(() => _boundaryLoading = false);
       }
     }
   }
@@ -88,7 +103,6 @@ class _MapViewState extends State<MapView> {
     void readGeometry(Map<String, dynamic> geom) {
       final type = geom['type']?.toString();
       final coords = geom['coordinates'];
-
       if (type == 'Polygon' && coords is List && coords.isNotEmpty) {
         final ring = _ringToPoints(coords.first);
         if (ring.length >= 3) rings.add(ring);
@@ -121,7 +135,7 @@ class _MapViewState extends State<MapView> {
         readGeometry(geojson);
       }
     } catch (e) {
-      debugPrint('Parse error: $e');
+      debugPrint('GeoJSON parse error: $e');
     }
     return rings.map(_buildBoundaryPolygon).toList();
   }
@@ -143,19 +157,17 @@ class _MapViewState extends State<MapView> {
 
   List<LatLng> _boundsToRing(dynamic rawBounds) {
     if (rawBounds is! Map) return [];
-    final north = _asDouble(rawBounds['north']);
-    final south = _asDouble(rawBounds['south']);
-    final east = _asDouble(rawBounds['east']);
-    final west = _asDouble(rawBounds['west']);
-    if (north == null || south == null || east == null || west == null) {
-      return [];
-    }
+    final n = _asDouble(rawBounds['north']);
+    final s = _asDouble(rawBounds['south']);
+    final e = _asDouble(rawBounds['east']);
+    final w = _asDouble(rawBounds['west']);
+    if (n == null || s == null || e == null || w == null) return [];
     return [
-      LatLng(south, west),
-      LatLng(south, east),
-      LatLng(north, east),
-      LatLng(north, west),
-      LatLng(south, west),
+      LatLng(s, w),
+      LatLng(s, e),
+      LatLng(n, e),
+      LatLng(n, w),
+      LatLng(s, w),
     ];
   }
 
@@ -167,10 +179,19 @@ class _MapViewState extends State<MapView> {
   Polygon _buildBoundaryPolygon(List<LatLng> points) {
     return Polygon(
       points: points,
-      color: Colors.transparent,
+      color: const Color(0xFF19C7A6).withOpacity(0.07),
       borderColor: const Color(0xFF19C7A6),
-      borderStrokeWidth: 2.5,
+      borderStrokeWidth: 2.2,
       isDotted: true,
+    );
+  }
+
+  LatLngBounds _padBounds(LatLngBounds bounds, double ratio) {
+    final latPad = (bounds.north - bounds.south).abs() * ratio;
+    final lonPad = (bounds.east - bounds.west).abs() * ratio;
+    return LatLngBounds(
+      LatLng(bounds.south - latPad, bounds.west - lonPad),
+      LatLng(bounds.north + latPad, bounds.east + lonPad),
     );
   }
 
@@ -199,25 +220,21 @@ class _MapViewState extends State<MapView> {
           ),
           userAgentPackageName: 'com.example.aquawatch',
           tileBuilder: provider.opacity < 1
-              ? (context, tileWidget, tile) {
-                  return Opacity(
-                    opacity: provider.opacity,
-                    child: tileWidget,
-                  );
-                }
+              ? (context, tileWidget, tile) =>
+                  Opacity(opacity: provider.opacity, child: tileWidget)
               : null,
         ),
       );
     });
-
     return layers;
   }
 
-  _BaseMapStyle _baseStyle(String selectedStyle) {
-    switch (selectedStyle) {
+  _BaseMapStyle _baseStyle(String key) {
+    switch (key) {
       case 'focus':
         return const _BaseMapStyle(
           name: 'Focus',
+          key: 'focus',
           url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
           subdomains: ['a', 'b', 'c'],
           retina: true,
@@ -226,6 +243,7 @@ class _MapViewState extends State<MapView> {
       case 'satellite':
         return const _BaseMapStyle(
           name: 'Satellite',
+          key: 'satellite',
           url:
               'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
           subdomains: [],
@@ -236,6 +254,7 @@ class _MapViewState extends State<MapView> {
       default:
         return const _BaseMapStyle(
           name: 'Street',
+          key: 'street',
           url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           subdomains: [],
           thumbnail: 'https://tile.openstreetmap.org/4/8/8.png',
@@ -245,13 +264,6 @@ class _MapViewState extends State<MapView> {
 
   List<_BaseMapStyle> get _baseMapChoices => const [
         _BaseMapStyle(
-          name: 'Street',
-          key: 'street',
-          url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          subdomains: [],
-          thumbnail: 'https://tile.openstreetmap.org/4/8/8.png',
-        ),
-        _BaseMapStyle(
           name: 'Satellite',
           key: 'satellite',
           url:
@@ -259,6 +271,13 @@ class _MapViewState extends State<MapView> {
           subdomains: [],
           thumbnail:
               'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/4/8/8',
+        ),
+        _BaseMapStyle(
+          name: 'Street',
+          key: 'street',
+          url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          subdomains: [],
+          thumbnail: 'https://tile.openstreetmap.org/4/8/8.png',
         ),
         _BaseMapStyle(
           name: 'Focus',
@@ -274,42 +293,53 @@ class _MapViewState extends State<MapView> {
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final baseStyle = _baseStyle(provider.mapStyle);
-    final selectedMarkerPoint = provider.pointData == null
+    final selectedPoint = provider.pointData == null
         ? provider.selectedLocation
         : LatLng(provider.pointData!.lat, provider.pointData!.lon);
 
     return Stack(
       children: [
+        // Map Layer - takes full space
         FlutterMap(
           mapController: widget.mapController,
           options: MapOptions(
-            initialCenter: _initialCenter,
-            initialZoom: _initialZoom,
-            minZoom: 5,
-            maxZoom: 18,
+            initialCenter: _defaultCenter,
+            initialZoom: _defaultZoom,
+            minZoom: _minZoom,
+            maxZoom: _maxZoom,
+            cameraConstraint: _paddedBoundaryBounds == null
+                ? const CameraConstraint.unconstrained()
+                : CameraConstraint.containCenter(
+                    bounds: _paddedBoundaryBounds!,
+                  ),
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all,
+            ),
             onPositionChanged: (position, hasGesture) {
-              final nextCenter = position.center;
-              final nextZoom = position.zoom;
-              if (nextCenter == null && nextZoom == null) return;
+              final c = position.center;
+              final z = position.zoom;
+              if (c == null && z == null) return;
               setState(() {
-                if (nextCenter != null) _visibleCenter = nextCenter;
-                if (nextZoom != null) _visibleZoom = nextZoom;
+                if (c != null) _visibleCenter = c;
+                if (z != null) _visibleZoom = z;
               });
             },
             onTap: (tapPosition, latLng) {
               provider.fetchPointData(latLng);
+              if (widget.onTapScreenPosition != null) {
+                widget.onTapScreenPosition!(tapPosition.global);
+              }
             },
           ),
           children: [
-            // Base layer
             TileLayer(
               urlTemplate: baseStyle.url,
               subdomains: baseStyle.subdomains,
-              retinaMode:
-                  baseStyle.retina ? RetinaMode.isHighDensity(context) : false,
+              retinaMode: baseStyle.retina
+                  ? RetinaMode.isHighDensity(context)
+                  : false,
               userAgentPackageName: 'com.example.aquawatch',
             ),
-
             if (provider.mapStyle == 'satellite')
               TileLayer(
                 urlTemplate:
@@ -318,83 +348,203 @@ class _MapViewState extends State<MapView> {
                 retinaMode: RetinaMode.isHighDensity(context),
                 userAgentPackageName: 'com.example.aquawatch',
               ),
-
-            // WMS Layers
             ..._buildWMSLayers(provider),
-
-            // Boundary
-            if (boundaryPolygons.isNotEmpty)
-              PolygonLayer(polygons: boundaryPolygons),
-
-            // Selected location marker
-            if (selectedMarkerPoint != null)
+            if (_boundaryPolygons.isNotEmpty)
+              PolygonLayer(polygons: _boundaryPolygons),
+            if (selectedPoint != null)
               MarkerLayer(
                 markers: [
                   Marker(
-                    point: selectedMarkerPoint,
-                    width: 44,
-                    height: 44,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppTheme.brandTeal.withOpacity(0.25),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppTheme.brandTeal.withOpacity(0.52),
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.location_on,
-                        color: AppTheme.brandTeal,
-                        size: 28,
-                      ),
-                    ),
+                    point: selectedPoint,
+                    width: 48,
+                    height: 48,
+                    child: const _LocationMarker(),
                   ),
                 ],
               ),
           ],
         ),
-        Positioned(
-          left: 12,
-          bottom: widget.bottomInset + 98,
-          child: _CoordinateReadout(
-            center: _visibleCenter,
-            selected: selectedMarkerPoint,
-          ),
-        ),
-        Positioned(
-          left: 12,
-          bottom: widget.bottomInset + 58,
-          child: _ScaleReadout(
-            center: _visibleCenter,
-            zoom: _visibleZoom,
-          ),
-        ),
-        if (boundaryLoading ||
-            provider.pointLoading ||
-            provider.pointError != null)
+
+        // Floating UI Elements - positioned to avoid overlap
+        // Top Status Pill - below safe area
+        if (_boundaryLoading || provider.pointLoading)
           Positioned(
-            left: 12,
-            right: 12,
-            top: MediaQuery.paddingOf(context).top + 86,
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: _MapStatusPill(
-                loading: boundaryLoading || provider.pointLoading,
-                message: provider.pointError ??
-                    (provider.pointLoading
-                        ? 'Sampling selected pixel'
-                        : 'Loading study boundary'),
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _StatusPill(
+                loading: true,
+                message: _boundaryLoading
+                    ? 'Loading boundary...'
+                    : 'Loading pixel data...',
               ),
             ),
           ),
+
+        // Bottom Controls Container - positioned above bottom inset
         Positioned(
-          left: 10,
-          right: 10,
-          bottom: widget.bottomInset + 10,
-          child: _BasemapSwitcher(
-            choices: _baseMapChoices,
-            selectedKey: provider.mapStyle,
-            onSelected: provider.setMapStyle,
+          left: 0,
+          right: 0,
+          bottom: widget.bottomInset + 12,
+          child: Center(
+            child: _BasemapSwitcher(
+              choices: _baseMapChoices,
+              selectedKey: provider.mapStyle,
+              onSelected: provider.setMapStyle,
+            ),
+          ),
+        ),
+
+        // Zoom Controls - Right side
+        Positioned(
+          right: 12,
+          bottom: widget.bottomInset + 80,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ZoomButton(
+                icon: Icons.add,
+                onPressed: () {
+                  final newZoom =
+                      (_visibleZoom + 1).clamp(_minZoom, _maxZoom).toDouble();
+                  widget.mapController.move(_visibleCenter, newZoom);
+                },
+              ),
+              const SizedBox(height: 8),
+              _ZoomButton(
+                icon: Icons.remove,
+                onPressed: () {
+                  final newZoom =
+                      (_visibleZoom - 1).clamp(_minZoom, _maxZoom).toDouble();
+                  widget.mapController.move(_visibleCenter, newZoom);
+                },
+              ),
+              const SizedBox(height: 8),
+              _ZoomButton(
+                icon: Icons.crop_free,
+                onPressed: _boundaryBounds != null
+                    ? () {
+                        widget.mapController.fitCamera(
+                          CameraFit.bounds(
+                            bounds: _boundaryBounds!,
+                            padding: const EdgeInsets.all(24),
+                            maxZoom: _maxZoom - 1,
+                          ),
+                        );
+                      }
+                    : null,
+                isActive: true,
+              ),
+              const SizedBox(height: 8),
+              _ZoomButton(
+                icon: Icons.my_location,
+                onPressed: () {
+                  widget.mapController.move(_defaultCenter, _defaultZoom);
+                },
+              ),
+            ],
+          ),
+        ),
+
+        // Coordinate Display - Top left
+        Positioned(
+          left: 12,
+          top: MediaQuery.of(context).padding.top +
+              (_boundaryLoading || provider.pointLoading ? 56 : 12),
+          child: _CoordinateReadout(
+            center: _visibleCenter,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Custom zoom button widget
+class _ZoomButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final bool isActive;
+
+  const _ZoomButton({
+    required this.icon,
+    this.onPressed,
+    this.isActive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              size: 20,
+              color: onPressed != null
+                  ? (isActive ? AppTheme.brandTeal : const Color(0xFF1A2B3C))
+                  : Colors.grey,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LocationMarker extends StatelessWidget {
+  const _LocationMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.brandTeal.withOpacity(0.16),
+            border: Border.all(
+              color: AppTheme.brandTeal.withOpacity(0.38),
+              width: 1.5,
+            ),
+          ),
+        ),
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.brandTeal.withOpacity(0.28),
+            border: Border.all(
+              color: AppTheme.brandTeal.withOpacity(0.70),
+              width: 1.5,
+            ),
+          ),
+          child: const Icon(
+            Icons.location_on,
+            color: AppTheme.brandTeal,
+            size: 20,
           ),
         ),
       ],
@@ -404,31 +554,33 @@ class _MapViewState extends State<MapView> {
 
 class _CoordinateReadout extends StatelessWidget {
   final LatLng center;
-  final LatLng? selected;
 
-  const _CoordinateReadout({
-    required this.center,
-    required this.selected,
-  });
+  const _CoordinateReadout({required this.center});
 
   @override
   Widget build(BuildContext context) {
-    final point = selected ?? center;
-    final label = selected == null ? 'Center' : 'Selected';
-
-    return _MapGlassPill(
+    final point = center;
+    const label = 'Center';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xCC07131F),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.explore_outlined, size: 15, color: Colors.white),
-          const SizedBox(width: 7),
+          const Icon(Icons.explore_outlined, size: 12, color: Colors.white70),
+          const SizedBox(width: 6),
           Text(
-            '$label  ${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}',
+            '$label  ${point.latitude.toStringAsFixed(5)}, '
+            '${point.longitude.toStringAsFixed(5)}',
             style: const TextStyle(
               color: Colors.white,
-              fontFamily: 'JetBrains Mono',
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
+              fontFamily: 'monospace',
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -437,159 +589,25 @@ class _CoordinateReadout extends StatelessWidget {
   }
 }
 
-class _ScaleReadout extends StatelessWidget {
-  final LatLng center;
-  final double zoom;
-
-  const _ScaleReadout({
-    required this.center,
-    required this.zoom,
-  });
-
-  static const List<int> _scaleMeters = [
-    5000000,
-    2000000,
-    1000000,
-    500000,
-    250000,
-    100000,
-    50000,
-    25000,
-    15000,
-    10000,
-    5000,
-    2500,
-    1000,
-    500,
-    250,
-    100,
-    50,
-    25,
-    10,
-    5,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final metersPerPixel = _metersPerPixel(center.latitude, zoom);
-    final meters = _scaleMeters.firstWhere(
-      (value) => value / metersPerPixel <= 150,
-      orElse: () => _scaleMeters.last,
-    );
-    final width = (meters / metersPerPixel).clamp(44.0, 150.0);
-    final label = meters >= 1000 ? '${meters ~/ 1000} km' : '$meters m';
-
-    return _MapGlassPill(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 7),
-      child: SizedBox(
-        width: 166,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontFamily: 'JetBrains Mono',
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 4),
-            CustomPaint(
-              size: Size(width, 8),
-              painter: _ScaleBarPainter(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  double _metersPerPixel(double latitude, double zoom) {
-    final clampedLat = latitude.clamp(-85.0, 85.0);
-    final latitudeRadians = clampedLat * math.pi / 180;
-    return math.cos(latitudeRadians) *
-        2 *
-        math.pi *
-        6378137 /
-        (256 * math.pow(2, zoom));
-  }
-}
-
-class _ScaleBarPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.square;
-    final y = size.height - 2;
-    canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    canvas.drawLine(const Offset(0, 0), Offset(0, y), paint);
-    canvas.drawLine(
-        Offset(size.width / 2, y - 4), Offset(size.width / 2, y), paint);
-    canvas.drawLine(Offset(size.width, 0), Offset(size.width, y), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _MapGlassPill extends StatelessWidget {
-  final Widget child;
-  final EdgeInsets padding;
-
-  const _MapGlassPill({
-    required this.child,
-    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: const Color(0xCC07131F),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x4A000000),
-            blurRadius: 24,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class _MapStatusPill extends StatelessWidget {
+class _StatusPill extends StatelessWidget {
   final bool loading;
   final String message;
 
-  const _MapStatusPill({
-    required this.loading,
-    required this.message,
-  });
+  const _StatusPill({required this.loading, required this.message});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 320),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xE6081420),
+        color: const Color(0xEC081420),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x42000000),
-            blurRadius: 24,
-            offset: Offset(0, 10),
+            color: Color(0x44000000),
+            blurRadius: 20,
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -598,33 +616,109 @@ class _MapStatusPill extends StatelessWidget {
         children: [
           if (loading)
             const SizedBox(
-              width: 14,
-              height: 14,
+              width: 12,
+              height: 12,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 color: AppTheme.brandTeal,
               ),
-            )
-          else
-            const Icon(
-              Icons.error_outline,
-              size: 16,
-              color: Colors.orangeAccent,
             ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              message,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+          if (loading) const SizedBox(width: 8),
+          Text(
+            message,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BasemapSwitcher extends StatelessWidget {
+  final List<_BaseMapStyle> choices;
+  final String selectedKey;
+  final ValueChanged<String> onSelected;
+
+  const _BasemapSwitcher({
+    required this.choices,
+    required this.selectedKey,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xA8050A11),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55000000),
+            blurRadius: 20,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < choices.length; i++) ...[
+            _BasemapCard(
+              style: choices[i],
+              active: selectedKey == choices[i].key,
+              onTap: () => onSelected(choices[i].key),
+            ),
+            if (i < choices.length - 1) const SizedBox(width: 4),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BasemapCard extends StatelessWidget {
+  final _BaseMapStyle style;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _BasemapCard({
+    required this.style,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: active
+              ? const Color(0xCC030C16)
+              : Colors.white.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active
+                ? const Color(0xEA5CCDFF)
+                : Colors.white.withOpacity(0.10),
+          ),
+        ),
+        child: Text(
+          style.name,
+          style: TextStyle(
+            color: active ? Colors.white : Colors.white70,
+            fontSize: 11,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
@@ -646,173 +740,4 @@ class _BaseMapStyle {
     this.retina = false,
     this.thumbnail = '',
   });
-}
-
-class _BasemapSwitcher extends StatelessWidget {
-  final List<_BaseMapStyle> choices;
-  final String selectedKey;
-  final ValueChanged<String> onSelected;
-
-  const _BasemapSwitcher({
-    required this.choices,
-    required this.selectedKey,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final maxSwitcherWidth = (MediaQuery.sizeOf(context).width - 20).clamp(
-      0.0,
-      double.infinity,
-    );
-
-    return IgnorePointer(
-      ignoring: false,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: maxSwitcherWidth,
-          ),
-          padding: const EdgeInsets.all(7),
-          decoration: BoxDecoration(
-            color: const Color(0xA3050A11),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.16)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x57000000),
-                blurRadius: 42,
-                offset: Offset(0, 18),
-              ),
-            ],
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final choice in choices) ...[
-                  _BasemapCard(
-                    style: choice,
-                    active: selectedKey == choice.key,
-                    onTap: () => onSelected(choice.key),
-                  ),
-                  if (choice != choices.last) const SizedBox(width: 7),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BasemapCard extends StatelessWidget {
-  final _BaseMapStyle style;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _BasemapCard({
-    required this.style,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedScale(
-        duration: const Duration(milliseconds: 180),
-        scale: active ? 1.06 : 1,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 180),
-          opacity: active ? 1 : 0.72,
-          child: Container(
-            width: 78,
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: active
-                  ? const Color(0xC2030C16)
-                  : Colors.white.withOpacity(0.045),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: active
-                    ? const Color(0xEA5CCDFF)
-                    : Colors.white.withOpacity(0.12),
-              ),
-              boxShadow: [
-                if (active)
-                  const BoxShadow(
-                    color: Color(0x803B9FD9),
-                    blurRadius: 22,
-                  ),
-              ],
-            ),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(9),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(
-                      style.thumbnail,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: style.key == 'focus'
-                                ? const [
-                                    Color(0xFF050810),
-                                    Color(0xFF1A3550),
-                                  ]
-                                : style.key == 'satellite'
-                                    ? const [
-                                        Color(0xFF325A3C),
-                                        Color(0xFF7A8A64),
-                                      ]
-                                    : const [
-                                        Color(0xFFDBEAFE),
-                                        Color(0xFF8DB5D8),
-                                      ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Container(
-                        margin: const EdgeInsets.all(4),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.62),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          style.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

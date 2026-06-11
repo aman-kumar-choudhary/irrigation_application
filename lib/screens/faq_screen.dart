@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +17,23 @@ class _FAQScreenState extends State<FAQScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
   int? _openIndex;
+
+  // Color constants matching home_screen
+  static const _darkBgPrimary = Color(0xFF040814);
+  static const _darkBgSecondary = Color(0xFF0A1128);
+  static const _darkTextPrimary = Color(0xFFF8FAFC);
+  static const _darkTextSecondary = Color(0xFF94A3B8);
+  static const _darkTextMuted = Color(0xFF64748B);
+  static const _accentTeal = Color(0xFF00D4A8);
+  static const _accentTealSoft = Color(0xFF70FFE3);
+  static const _accentAmber = Color(0xFFFDE047);
+
+  static const _lightBgPrimary = Color(0xFFF8FAFC);
+  static const _lightBgSecondary = Color(0xFFF1F5F9);
+  static const _lightTextPrimary = Color(0xFF0F172A);
+  static const _lightTextMuted = Color(0xFF64748B);
+  static const _lightAccentTeal = Color(0xFF0D9488);
+  static const _lightAccentAmber = Color(0xFFD97706);
 
   static const List<_FaqItem> _faqs = [
     _FaqItem(
@@ -85,6 +104,13 @@ class _FAQScreenState extends State<FAQScreen> {
     super.dispose();
   }
 
+  Color _textPrimary(bool isDark) =>
+      isDark ? _darkTextPrimary : _lightTextPrimary;
+
+  Color _textMuted(bool isDark) => isDark ? _darkTextMuted : _lightTextMuted;
+
+  Color _teal(bool isDark) => isDark ? _accentTeal : _lightAccentTeal;
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
@@ -92,14 +118,22 @@ class _FAQScreenState extends State<FAQScreen> {
     final filtered = _filteredFaqs;
 
     return Scaffold(
+      backgroundColor: isDark ? _darkBgPrimary : _lightBgPrimary,
       body: CustomScrollView(
         slivers: [
-          SliverToBoxAdapter(child: _governmentHeader()),
-          SliverToBoxAdapter(child: _pageNav(provider)),
+          SliverToBoxAdapter(child: _governmentHeader(context, isDark)),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedHeaderDelegate(
+              height: 64,
+              child: _homeNav(provider, isDark),
+            ),
+          ),
+          SliverToBoxAdapter(child: _statusStrip(isDark)),
           SliverToBoxAdapter(child: _hero(isDark, filtered.length)),
           SliverToBoxAdapter(
             child: Container(
-              color: isDark ? const Color(0xFF07111E) : Colors.white,
+              color: isDark ? _darkBgSecondary : _lightBgSecondary,
               padding: const EdgeInsets.fromLTRB(12, 32, 12, 42),
               child: Center(
                 child: ConstrainedBox(
@@ -116,7 +150,7 @@ class _FAQScreenState extends State<FAQScreen> {
               ),
             ),
           ),
-          SliverToBoxAdapter(child: _footer(isDark)),
+          SliverToBoxAdapter(child: _footer(context, isDark)),
         ],
       ),
     );
@@ -131,50 +165,261 @@ class _FAQScreenState extends State<FAQScreen> {
     }).toList();
   }
 
-  Widget _governmentHeader() {
+  Widget _governmentHeader(BuildContext context, bool isDark) {
+    final headerBg = isDark ? const Color(0xFF1A4A6B) : _lightBgPrimary;
+    final headerText = isDark ? Colors.white : _lightTextPrimary;
+
     return Container(
-      color: const Color(0xFF1A4A6B),
+      color: headerBg,
       child: SafeArea(
         bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      _logo('assets/icons/logo1.png', 'IIRS', 42),
-                      const SizedBox(width: 10),
-                      _logo('assets/icons/isro.png', 'ISRO', 42),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      _logo('assets/icons/iirs.png', 'IIRS', 42),
-                      const SizedBox(width: 10),
-                      _logo('assets/icons/india.png', 'India', 42),
-                    ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 768;
+            final tiny = constraints.maxWidth < 430;
+            final logoHeight = tiny ? 40.0 : (compact ? 55.0 : 64.0);
+            final horizontalPadding = compact ? 16.0 : 24.0;
+            final title = _headerTitle(headerText, compact);
+
+            final leftLogos = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _logo(
+                  'assets/images/logo.png',
+                  'IIRS',
+                  logoHeight,
+                  maxWidth: logoHeight,
+                  isDark: isDark,
+                ),
+                SizedBox(width: tiny ? 10 : 16),
+                _logo(
+                  'assets/images/isro.png',
+                  'ISRO',
+                  logoHeight,
+                  maxWidth: logoHeight,
+                  isDark: isDark,
+                ),
+              ],
+            );
+
+            final rightLogos = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _logo(
+                  'assets/images/iirs.png',
+                  'IIRS',
+                  logoHeight,
+                  isDark: isDark,
+                ),
+                SizedBox(width: tiny ? 10 : 16),
+                _logo(
+                  'assets/images/india.png',
+                  'India',
+                  logoHeight,
+                  isDark: isDark,
+                ),
+              ],
+            );
+
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Colors.black.withOpacity(0.18)),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.25 : 0.22),
+                    blurRadius: 14,
+                    offset: const Offset(0, 3),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Indian Space Research Organisation, Department of Space',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.92),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1280),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalPadding,
+                      14,
+                      horizontalPadding,
+                      compact ? 14 : 16,
+                    ),
+                    child: compact
+                        ? Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Flexible(child: leftLogos),
+                                  const SizedBox(width: 12),
+                                  Flexible(child: rightLogos),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              title,
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              leftLogos,
+                              Expanded(child: title),
+                              rightLogos,
+                            ],
+                          ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 2),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _headerTitle(Color color, bool compact) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'भारतीय अंतरिक्ष अनुसंधान संगठन, अंतरिक्ष विभाग',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.notoSansDevanagari(
+              color: color,
+              fontSize: compact ? 17 : 23,
+              fontWeight: FontWeight.w800,
+              height: 1.18,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Indian Space Research Organisation, Department of Space',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              color: color,
+              fontSize: compact ? 15 : 18,
+              fontWeight: FontWeight.w500,
+              height: 1.22,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'भारत सरकार / Government of India',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              color: color,
+              fontSize: compact ? 12 : 14,
+              fontWeight: FontWeight.w400,
+              height: 1.24,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _homeNav(AppProvider provider, bool isDark) {
+    final bg = isDark ? const Color(0xFF009688) : Colors.white;
+    final textColor = isDark ? Colors.white : _lightAccentTeal;
+
+    return Material(
+      color: bg,
+      elevation: 4,
+      shadowColor: Colors.black,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Colors.black.withOpacity(0.15), width: 2),
+          ),
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1280),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 560;
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: SizedBox(
+                    width: compact ? null : constraints.maxWidth,
+                    height: 64,
+                    child: Row(
+                      mainAxisSize:
+                          compact ? MainAxisSize.min : MainAxisSize.max,
+                      mainAxisAlignment: compact
+                          ? MainAxisAlignment.start
+                          : MainAxisAlignment.center,
+                      children: [
+                        SizedBox(width: compact ? 4 : 0),
+                        _navLink(
+                          'About',
+                          textColor,
+                          () => provider.setIndex(0),
+                        ),
+                        _navLink(
+                          'Study Region',
+                          textColor,
+                          () => provider.setIndex(0),
+                        ),
+                        _navLink(
+                          'Docs',
+                          textColor,
+                          () => provider.setIndex(3),
+                        ),
+                        _navLink(
+                          'FAQs',
+                          textColor,
+                          () => provider.setIndex(4),
+                          active: true,
+                        ),
+                        SizedBox(width: compact ? 4 : 0),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statusStrip(bool isDark) {
+    final teal = _teal(isDark);
+    return Container(
+      color: teal.withOpacity(isDark ? 0.15 : 0.18),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: teal,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: teal.withOpacity(0.75),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(
-                'Government of India',
-                style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.72),
+                'LIVE',
+                style: GoogleFonts.jetBrainsMono(
+                  color: teal,
                   fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
                 ),
               ),
             ],
@@ -184,26 +429,8 @@ class _FAQScreenState extends State<FAQScreen> {
     );
   }
 
-  Widget _pageNav(AppProvider provider) {
-    return Container(
-      height: 48,
-      color: const Color(0xFF009688),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        children: [
-          _navButton('Home', () => provider.setIndex(0)),
-          _navButton('Docs', () => provider.setIndex(3)),
-          _navButton('FAQs', () => provider.setIndex(4), active: true),
-          _navButton('Open Map', () => provider.setIndex(1)),
-        ],
-      ),
-    );
-  }
-
   Widget _hero(bool isDark, int count) {
-    final heroColor =
-        isDark ? const Color(0xFF0B1827) : const Color(0xFFF0FDF9);
+    final heroColor = isDark ? _darkBgSecondary : _lightBgSecondary;
     return Container(
       color: heroColor,
       padding: const EdgeInsets.fromLTRB(18, 44, 18, 36),
@@ -214,7 +441,7 @@ class _FAQScreenState extends State<FAQScreen> {
             style: GoogleFonts.jetBrainsMono(
               fontSize: 11,
               fontWeight: FontWeight.w800,
-              color: isDark ? AppTheme.brandTeal : const Color(0xFF0D9488),
+              color: _teal(isDark),
               letterSpacing: 1.5,
             ),
           ),
@@ -225,7 +452,7 @@ class _FAQScreenState extends State<FAQScreen> {
             style: GoogleFonts.outfit(
               fontSize: 32,
               fontWeight: FontWeight.w800,
-              color: isDark ? AppTheme.darkText : AppTheme.lightText,
+              color: _textPrimary(isDark),
               height: 1.08,
             ),
           ),
@@ -236,7 +463,7 @@ class _FAQScreenState extends State<FAQScreen> {
             style: TextStyle(
               fontSize: 15,
               height: 1.65,
-              color: isDark ? AppTheme.darkTextSoft : AppTheme.lightTextSoft,
+              color: _textMuted(isDark),
             ),
           ),
           const SizedBox(height: 28),
@@ -246,7 +473,7 @@ class _FAQScreenState extends State<FAQScreen> {
             Text(
               'Showing $count result${count == 1 ? '' : 's'} for "$_query"',
               style: TextStyle(
-                color: isDark ? AppTheme.brandTeal : const Color(0xFF0D9488),
+                color: _teal(isDark),
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
@@ -282,27 +509,27 @@ class _FAQScreenState extends State<FAQScreen> {
                 ),
           hintText: 'Search questions, e.g. irrigation, satellite, wheat',
           filled: true,
-          fillColor: isDark ? AppTheme.darkSurface2 : Colors.white,
+          fillColor: isDark ? const Color(0xFF131E3A) : Colors.white,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(50),
             borderSide: BorderSide(
-              color: isDark ? AppTheme.darkBorder : const Color(0xFFCBD5E1),
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
               width: 2,
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(50),
             borderSide: BorderSide(
-              color: isDark ? AppTheme.darkBorder : const Color(0xFFCBD5E1),
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
               width: 2,
             ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(50),
             borderSide: BorderSide(
-              color: isDark ? AppTheme.brandTeal : const Color(0xFF0D9488),
+              color: _teal(isDark),
               width: 2,
             ),
           ),
@@ -318,13 +545,13 @@ class _FAQScreenState extends State<FAQScreen> {
       duration: const Duration(milliseconds: 200),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkSurface2 : Colors.white,
+        color: isDark ? const Color(0xFF0A1128) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isOpen
-              ? (isDark ? AppTheme.brandTeal : const Color(0xFF0D9488))
+              ? _teal(isDark)
               : isDark
-                  ? AppTheme.darkBorder
+                  ? const Color(0xFF1E2A3A)
                   : const Color(0xFFE2E8F0),
         ),
         boxShadow: [
@@ -354,12 +581,8 @@ class _FAQScreenState extends State<FAQScreen> {
                         fontWeight: FontWeight.w800,
                         height: 1.45,
                         color: isOpen
-                            ? (isDark
-                                ? AppTheme.brandTeal
-                                : const Color(0xFF0D9488))
-                            : isDark
-                                ? AppTheme.darkText
-                                : AppTheme.lightText,
+                            ? _teal(isDark)
+                            : _textPrimary(isDark),
                       ),
                     ),
                   ),
@@ -368,13 +591,7 @@ class _FAQScreenState extends State<FAQScreen> {
                     isOpen ? '-' : '+',
                     style: TextStyle(
                       fontSize: 24,
-                      color: isOpen
-                          ? (isDark
-                              ? AppTheme.brandTeal
-                              : const Color(0xFF0D9488))
-                          : isDark
-                              ? AppTheme.darkTextMuted
-                              : AppTheme.lightTextMuted,
+                      color: isOpen ? _teal(isDark) : _textMuted(isDark),
                     ),
                   ),
                 ],
@@ -400,8 +617,7 @@ class _FAQScreenState extends State<FAQScreen> {
                 style: TextStyle(
                   fontSize: 14,
                   height: 1.75,
-                  color:
-                      isDark ? AppTheme.darkTextSoft : AppTheme.lightTextSoft,
+                  color: _textMuted(isDark),
                 ),
               ),
             ),
@@ -419,80 +635,153 @@ class _FAQScreenState extends State<FAQScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkSurface2 : const Color(0xFFF8FAFC),
+        color: isDark ? const Color(0xFF0A1128) : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isDark ? AppTheme.darkBorder : const Color(0xFFE2E8F0),
+          color: isDark ? const Color(0xFF1E2A3A) : const Color(0xFFE2E8F0),
         ),
       ),
       child: Text(
         'No results for "$_query". Try a different keyword.',
         style: TextStyle(
-          color: isDark ? AppTheme.darkTextSoft : AppTheme.lightTextSoft,
+          color: _textMuted(isDark),
         ),
       ),
     );
   }
 
-  Widget _footer(bool isDark) {
+  Widget _footer(BuildContext context, bool isDark) {
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 760;
+    final footerBg = isDark ? const Color(0xFF070808) : const Color(0xFF0B1827);
+
+    final brand = Column(
+      crossAxisAlignment:
+          compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      children: [
+        Text(
+          '· Irrigation Water Requirements',
+          textAlign: compact ? TextAlign.center : TextAlign.start,
+          style: GoogleFonts.outfit(
+            color: _darkTextPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'ISRO · IIRS · Department of Space, Govt. of India',
+          textAlign: compact ? TextAlign.center : TextAlign.start,
+          style: GoogleFonts.inter(
+            color: _darkTextMuted,
+            fontSize: 13,
+            height: 1.35,
+          ),
+        ),
+        Text(
+          'Udham Singh Nagar · Uttarakhand · Rabi Wheat',
+          textAlign: compact ? TextAlign.center : TextAlign.start,
+          style: GoogleFonts.inter(
+            color: _darkTextMuted,
+            fontSize: 13,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+
     return Container(
-      padding: const EdgeInsets.all(24),
-      color: isDark ? const Color(0xFF070D12) : const Color(0xFF0F172A),
-      child: Text(
-        'Irrigation Water Requirements (IWR)\nISRO - IIRS - Department of Space, Govt. of India',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 12,
-          height: 1.55,
-          color: isDark ? AppTheme.darkTextMuted : const Color(0xFF94A3B8),
+      color: footerBg,
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 40),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: compact
+              ? Column(
+                  children: [
+                    brand,
+                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 3, child: brand),
+                  ],
+                ),
         ),
       ),
     );
   }
 
-  Widget _logo(String asset, String fallback, double size) {
-    return Image.asset(
-      asset,
-      height: size,
-      width: size,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => Container(
-        height: size,
-        width: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.14),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          fallback,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
+  Widget _logo(
+    String asset,
+    String fallback,
+    double height, {
+    double? maxWidth,
+    required bool isDark,
+  }) {
+    final width = maxWidth ?? height;
+    return SizedBox(
+      height: height,
+      width: width,
+      child: Image.asset(
+        asset,
+        height: height,
+        width: width,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(isDark ? 0.14 : 0.55),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.white.withOpacity(isDark ? 0.20 : 0.45),
+            ),
+          ),
+          child: Text(
+            fallback,
+            style: TextStyle(
+              color: isDark ? Colors.white : _lightTextPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _navButton(String label, VoidCallback onTap, {bool active = false}) {
+  Widget _navLink(String label, Color color, VoidCallback onTap, {bool active = false}) {
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: TextButton(
         onPressed: onTap,
         style: TextButton.styleFrom(
+          foregroundColor: color,
           backgroundColor: active ? Colors.white.withOpacity(0.18) : null,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          textStyle: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.4,
+          textStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          ),
+        ).copyWith(
+          overlayColor: MaterialStateProperty.resolveWith<Color?>(
+            (states) => states.contains(MaterialState.hovered) ||
+                    states.contains(MaterialState.pressed)
+                ? Colors.white.withOpacity(0.18)
+                : null,
           ),
         ),
-        child: Text(label.toUpperCase()),
+        child: Text(
+          label.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }
@@ -506,4 +795,31 @@ class _FaqItem {
     required this.question,
     required this.answer,
   });
+}
+
+class _PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final double height;
+  final Widget child;
+
+  const _PinnedHeaderDelegate({required this.height, required this.child});
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedHeaderDelegate oldDelegate) {
+    return oldDelegate.height != height || oldDelegate.child != child;
+  }
 }
